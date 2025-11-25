@@ -12,6 +12,8 @@ find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(image_transport REQUIRED)
+find_package(Eigen3 REQUIRED)
+
 
 # uncomment the following section in order to fill in
 # further dependencies manually.
@@ -31,7 +33,7 @@ endif()
 
 add_executable(active_ir_processor src/active_ir_processor.cpp)
 add_executable(passive_ir_processor src/passive_ir_processor.cpp)
-
+add_executable(depth_to_rgb src/depth_to_rgb.cpp)
 add_executable(occlusion src/occlusion.cpp)
 
 ament_target_dependencies(active_ir_processor
@@ -52,11 +54,23 @@ ament_target_dependencies(occlusion
   cv_bridge
   image_transport
 )
+ament_target_dependencies(depth_to_rgb
+  rclcpp
+  sensor_msgs
+  cv_bridge
+  image_transport
+  OpenCV
+  Eigen3
+)
+target_include_directories(depth_to_rgb PUBLIC ${EIGEN3_INCLUDE_DIRS})
+
 
 install(TARGETS
   active_ir_processor
   passive_ir_processor
   occlusion
+  depth_to_rgb
+  
   DESTINATION lib/${PROJECT_NAME}
 )
 
