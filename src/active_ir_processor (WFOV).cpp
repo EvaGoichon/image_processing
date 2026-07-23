@@ -8,7 +8,7 @@ class IRImageProcessor : public rclcpp::Node
 public:
     IRImageProcessor()
     : Node("ir_image_processor"),
-      use_fixed_range_(true),
+      use_fixed_range_(false),
       range_initialized_(false)
     {
         // Declare parameters for topics

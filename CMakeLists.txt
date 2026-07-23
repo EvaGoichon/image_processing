@@ -13,6 +13,7 @@ find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 
 # uncomment the following section in order to fill in
@@ -61,9 +62,10 @@ ament_target_dependencies(depth_to_rgb
   image_transport
   OpenCV
   Eigen3
+
 )
 target_include_directories(depth_to_rgb PUBLIC ${EIGEN3_INCLUDE_DIRS})
-
+target_link_libraries(depth_to_rgb yaml-cpp) 
 
 install(TARGETS
   active_ir_processor
