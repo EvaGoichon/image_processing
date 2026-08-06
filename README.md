@@ -1,20 +1,24 @@
 # Image Processing Package
 
-ROS2 package for IR image processing and camera failure simulation for RGBIRD SLAM systems.
+ROS2 package for IR image processing and camera degradation simulation for RGB-IR-Depth (RID) SLAM systems.
 
 ## Features
 
-- **Active IR Processor**: Advanced IR enhancement with percentile clipping and bilateral filtering
-- **Passive IR Processor**: Basic IR processing with gamma correction
-- **Camera Failure Simulator**: Test SLAM robustness with simulated sensor failures
+- **Active IR Processor**: IR enhancement via percentile-based dynamic-range clipping and edge-preserving bilateral filtering, with mode-dependent tone mapping (`WFOV`: linear percentile clip; `NFOV`: logarithmic compression). Supports an optional fixed-range mode where the normalization range is computed once and held fixed for the sequence.
+- **Passive IR Processor**: Basic IR processing with gamma correction.
+- **Occlusion / Degradation Node**: Simulates sensor degradation (dimming, spatial occlusion patterns, noise, blur) on a selected image stream, for robustness evaluation.
+
+This package is developed as a general-purpose toolkit for multimodal RGB-IR-Depth sensing and is used across several related works, including the `stella_vslam_ros_RID` SLAM pipeline. Not every feature is necessarily exercised by every downstream project.
+
+> **Note:** When used with `stella_vslam_ros_RID`, these nodes are not run standalone — they are launched automatically as part of its launch files (e.g. `RID_CD-MaJ_WFOV.py`), with parameters (`mode_ir`, `use_fixed_range`, `dimming`) set as launch arguments. The standalone `ros2 run` commands below remain valid for manual testing or use in other projects.
 
 ## Installation
 
 ```bash
 cd ~/ros2_ws/src
-git clone https://github.com/EvaGoichon/image_processing.git
+git clone --recursive https://github.com/EvaGoichon/image_processing.git
 cd ~/ros2_ws
-colcon build --packages-select image_processing
+colcon build --packages-select image_processing --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 
@@ -23,54 +27,45 @@ source install/setup.bash
 ### IR Processing
 
 ```bash
-# Active IR processor 
-ros2 run image_processing active_ir_processor
+# Active IR processor (WFOV mode, fixed-range normalization)
+ros2 run image_processing active_ir_processor --ros-args \
+  -p mode_ir:=WFOV -p use_fixed_range:=true \
+  -p input_topic:=/ir/image_raw -p output_topic:=/ir_processed/image_raw
 
-# Passive IR processor 
+# Active IR processor (NFOV mode)
+ros2 run image_processing active_ir_processor --ros-args -p mode_ir:=NFOV
+
+# Passive IR processor (legacy)
 ros2 run image_processing passive_ir_processor
 ```
 
-### Failure Simulation
+### Degradation Simulation
 
 ```bash
-# RGB camera occlusion (50% center)
-ros2 run image_processing occlusion -i rgb -r 50 -m center
+# RGB dimming (50%)
+ros2 run image_processing occlusion -i rgb -m dimming -r 50
 
-# IR sensor failure (affects all IR/depth streams)
-ros2 run image_processing occlusion -i ir -r 70 -m center
-
-# Dimming (30% darker)
-ros2 run image_processing occlusion -i rgb -r 30 -m dimming
+# IR-side degradation
+ros2 run image_processing occlusion -i ir -m dimming -r 50
 ```
 
-## Occlusion Options
+## Occlusion Node Options
 
 ```bash
-ros2 run image_processing occlusion -i TYPE -r RATE -m MODE
+ros2 run image_processing occlusion -i TYPE -m MODE -r RATE
 ```
 
 **Options:**
-- `-i`: Camera type (`rgb` | `ir`)
-- `-r`: Intensity 0-100%
-- `-m`: Pattern (`left` | `right` | `center` | `noise` | `blur` | `dimming`)
-
-**Examples:**
-```bash
-# Left side occlusion
-ros2 run image_processing occlusion -i rgb -r 40 -m left
-
-# Gaussian noise
-ros2 run image_processing occlusion -i rgb -r 60 -m noise
-
-# Complete IR sensor failure
-ros2 run image_processing occlusion -i ir -r 100 -m center
-```
+- `-i`: Target stream (`rgb` | `ir`)
+- `-m`: Degradation pattern — `dimming`, `left`, `right`, `center`, `noise`, `blur`. All patterns are implemented and produce the expected image transformation; `dimming` is the pattern used in the SLAM robustness evaluation of the associated paper, the others are available for general-purpose use.
+- `-r`: Intensity, 0–100
 
 ## Topics
 
 ### Active IR Processor
-- Input: `/ir/image_raw` (16-bit)
-- Output: `/ir_processed/image_raw` (8-bit)
+- Input: configurable via `input_topic` parameter (default `/ir/image_raw`, 16-bit)
+- Output: configurable via `output_topic` parameter (default `/ir_processed/image_raw`, 8-bit mono)
+- Key parameters: `mode_ir` (`WFOV` | `NFOV`), `use_fixed_range` (bool)
 
 ### Passive IR Processor
 - Input: `/ir/image_raw` (16-bit)
