@@ -14,7 +14,7 @@ public:
         // parameters
         this->declare_parameter<std::string>("input_topic", "/ir/image_raw");
         this->declare_parameter<std::string>("output_topic", "/ir_processed/image_raw");
-        this->declare_parameter<std::string>("mode_ir", "NFOV");  
+        this->declare_parameter<std::string>("mode_ir", "WFOV");  
         this->declare_parameter<bool>("use_fixed_range", true);
 
         // Get parameter values
@@ -25,7 +25,7 @@ public:
 
         sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             input_topic,
-            rclcpp::QoS(10).reliable(),   // au lieu de rclcpp::SensorDataQoS()
+            rclcpp::QoS(10).reliable(),   // supr rclcpp::SensorDataQoS()
             std::bind(&IRImageProcessor::imageCallback, this, std::placeholders::_1)
         );
 
