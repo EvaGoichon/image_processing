@@ -1,26 +1,26 @@
 // ===========================================================================
 // depth_to_rgb.cpp  —  ROS2 node
 //
-// Reprojecte les images depth (512x512, IR camera) dans la géométrie
-// de la caméra RGB (2048x1536), pour superposition RGBD/RID-SLAM.
+// Reprojects depth images (512x512, IR camera) into the geometry
+// of the RGB camera (2048x1536), for RGBD/RID-SLAM overlay.
 //
-// Paramètres ROS2 :
-//   calibration_file  (string)  — chemin vers RID_MuSeM.yaml (ou tout yaml
-//                                 avec sections Camera / CameraIR / Transformation)
-//   depth_topic       (string)  — défaut : "/depth/image_raw"
-//   output_topic      (string)  — défaut : "/depth_to_rgb/image_raw"
+// ROS2 parameters:
+//   calibration_file  (string)  — path to RID_MuSeM.yaml (or any yaml
+//                                 with Camera / CameraIR / Transformation sections)
+//   depth_topic       (string)  — default: "/depth/image_raw"
+//   output_topic      (string)  — default: "/depth_to_rgb/image_raw"
 //
-// Format YAML attendu (même format que RID_MuSeM.yaml) :
+// Expected YAML format (same as RID_MuSeM.yaml):
 //   Camera:    fx, fy, cx, cy, k1, k2, k3, p1, p2, cols, rows
 //   CameraIR:  fx, fy, cx, cy, k1, k2, k3, p1, p2, cols, rows
 //   Transformation:
-//     translation:         [tx, ty, tz]          (en mètres)
+//     translation:         [tx, ty, tz]          (in meters)
 //     rotation_quaternion: [w, x, y, z]
 //   Preprocessing:
 //     depthmap_factor: 1000.0
 //
-// Ordre distorsion OpenCV utilisé en interne : k1 k2 p1 p2 k3
-// (le YAML stocke k1 k2 k3 p1 p2 — la conversion est faite à la lecture)
+// OpenCV distortion order used internally: k1 k2 p1 p2 k3
+// (the YAML stores k1 k2 k3 p1 p2 — the conversion is done when reading)
 // ===========================================================================
 
 #include <rclcpp/rclcpp.hpp>
@@ -37,20 +37,20 @@
 using std::placeholders::_1;
 
 // ---------------------------------------------------------------------------
-// Helpers YAML
+// YAML helpers
 // ---------------------------------------------------------------------------
 
 static double yamlDouble(const YAML::Node& node, const std::string& key)
 {
     if (!node[key])
-        throw std::runtime_error("YAML: clé manquante : " + key);
+        throw std::runtime_error("YAML: missing key: " + key);
     return node[key].as<double>();
 }
 
 static int yamlInt(const YAML::Node& node, const std::string& key)
 {
     if (!node[key])
-        throw std::runtime_error("YAML: clé manquante : " + key);
+        throw std::runtime_error("YAML: missing key: " + key);
     return node[key].as<int>();
 }
 
@@ -63,7 +63,7 @@ class DepthToRGBNode : public rclcpp::Node
 public:
     DepthToRGBNode() : Node("depth_to_rgb")
     {
-        // ---- Paramètres ROS2 ------------------------------------------------
+        // ---- ROS2 parameters ------------------------------------------------
         this->declare_parameter<std::string>("calibration_file", "");
         this->declare_parameter<std::string>("depth_topic",  "/depth/image_raw");
         this->declare_parameter<std::string>("output_topic", "/depth_to_rgb/image_raw");
@@ -75,16 +75,16 @@ public:
         if (calib_path.empty())
         {
             RCLCPP_FATAL(this->get_logger(),
-                "Paramètre 'calibration_file' non défini.\n"
-                "Usage : ros2 run <pkg> depth_to_rgb "
+                "Parameter 'calibration_file' is not set.\n"
+                "Usage: ros2 run <pkg> depth_to_rgb "
                 "--ros-args -p calibration_file:=/home/eva/ros2_ws/src/stella_vslam_ros_RID/yaml/RID_WFOV_u.yaml");
-            throw std::runtime_error("calibration_file manquant");
+            throw std::runtime_error("missing calibration_file");
         }
 
-        // ---- Chargement YAML ------------------------------------------------
+        // ---- YAML loading ---------------------------------------------------
         loadCalibration(calib_path);
 
-        // La LUT est construite au premier message (on lit les vraies dimensions)
+        // The LUT is built on the first message (to read the actual dimensions)
 
         // ---- Topics ---------------------------------------------------------
         sub_depth_ = this->create_subscription<sensor_msgs::msg::Image>(
@@ -95,7 +95,7 @@ public:
             output_topic, 10);
 
         RCLCPP_INFO(this->get_logger(),
-            "depth_to_rgb prêt.\n"
+            "depth_to_rgb ready.\n"
             "  calib  : %s\n"
             "  sub    : %s\n"
             "  pub    : %s\n"
@@ -112,27 +112,27 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_depth_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr    pub_aligned_;
 
-    // ---- Intrinsèques -------------------------------------------------------
-    cv::Mat K_d_, D_d_;          // caméra Depth/IR  (OpenCV: k1 k2 p1 p2 k3)
-    cv::Mat K_rgb_, D_rgb_;      // caméra RGB       (OpenCV: k1 k2 p1 p2 k3)
+    // ---- Intrinsics ---------------------------------------------------------
+    cv::Mat K_d_, D_d_;          // Depth/IR camera  (OpenCV: k1 k2 p1 p2 k3)
+    cv::Mat K_rgb_, D_rgb_;      // RGB camera       (OpenCV: k1 k2 p1 p2 k3)
     int depth_cols_{0}, depth_rows_{0};
     int rgb_cols_{0},   rgb_rows_{0};
     double depth_scale_{0.001};  // = 1 / depthmap_factor
 
-    // ---- Extrinsèques -------------------------------------------------------
+    // ---- Extrinsics ---------------------------------------------------------
     Eigen::Matrix4d T_depth_to_rgb_;   // Depth → RGB
 
-    // ---- LUT pré-calculée ---------------------------------------------------
-    // Construite au premier message pour utiliser les vraies dimensions.
+    // ---- Precomputed LUT ----------------------------------------------------
+    // Built on the first message to use the actual dimensions.
     cv::Mat lut_u_rgb_;   // CV_32SC1, depth_rows x depth_cols
     cv::Mat lut_v_rgb_;   // CV_32SC1
     bool lut_ready_{false};
 
-    // ---- Maps d'undistorsion depth (pré-calculées) --------------------------
+    // ---- Depth undistortion maps (precomputed) ------------------------------
     cv::Mat undist_map1_, undist_map2_;
 
     // =========================================================================
-    // loadCalibration  —  lit le YAML format RID_MuSeM.yaml
+    // loadCalibration  —  reads a YAML in the RID_MuSeM.yaml format
     // =========================================================================
     void loadCalibration(const std::string& path)
     {
@@ -140,12 +140,12 @@ private:
         try {
             cfg = YAML::LoadFile(path);
         } catch (const YAML::Exception& e) {
-            throw std::runtime_error("Impossible de lire le YAML '" + path + "' : " + e.what());
+            throw std::runtime_error("Cannot read YAML '" + path + "': " + e.what());
         }
 
-        // ---- Caméra Depth / IR (CameraIR) -----------------------------------
+        // ---- Depth / IR camera (CameraIR) -----------------------------------
         if (!cfg["CameraIR"])
-            throw std::runtime_error("Section 'CameraIR' absente du YAML '" + path + "'.");
+            throw std::runtime_error("Section 'CameraIR' missing from YAML '" + path + "'.");
         {
             const auto c = cfg["CameraIR"];
             K_d_ = (cv::Mat_<double>(3,3) <<
@@ -163,9 +163,9 @@ private:
             depth_rows_ = yamlInt(c,"rows");
         }
 
-        // ---- Caméra RGB (Camera) --------------------------------------------
+        // ---- RGB camera (Camera) --------------------------------------------
         if (!cfg["Camera"])
-            throw std::runtime_error("Section 'Camera' absente du YAML '" + path + "'.");
+            throw std::runtime_error("Section 'Camera' missing from YAML '" + path + "'.");
         {
             const auto c = cfg["Camera"];
             K_rgb_ = (cv::Mat_<double>(3,3) <<
@@ -184,22 +184,22 @@ private:
         }
 
         // ---- Transformation (Depth → RGB) -----------------------------------
-        // Convention du YAML (même qu'ORB-SLAM3 / RIDSLAM) :
-        //   translation + rotation_quaternion décrivent T_rgb_depth (RGB←Depth)
-        //   → on l'inverse pour obtenir T_depth_to_rgb_ (Depth→RGB)
+        // YAML convention (same as ORB-SLAM3 / RIDSLAM):
+        //   translation + rotation_quaternion describe T_rgb_depth (RGB←Depth)
+        //   → inverted to get T_depth_to_rgb_ (Depth→RGB)
         if (!cfg["Transformation"])
-            throw std::runtime_error("Section 'Transformation' absente du YAML '" + path + "'.");
+            throw std::runtime_error("Section 'Transformation' missing from YAML '" + path + "'.");
         {
             const auto tf = cfg["Transformation"];
 
             const auto tv = tf["translation"];
             if (!tv || tv.size() != 3)
-                throw std::runtime_error("Transformation.translation doit avoir 3 éléments [tx,ty,tz].");
+                throw std::runtime_error("Transformation.translation must have 3 elements [tx,ty,tz].");
             const Eigen::Vector3d t(tv[0].as<double>(), tv[1].as<double>(), tv[2].as<double>());
 
             const auto qv = tf["rotation_quaternion"];
             if (!qv || qv.size() != 4)
-                throw std::runtime_error("Transformation.rotation_quaternion doit avoir 4 éléments [w,x,y,z].");
+                throw std::runtime_error("Transformation.rotation_quaternion must have 4 elements [w,x,y,z].");
             Eigen::Quaterniond q(
                 qv[0].as<double>(),  // w
                 qv[1].as<double>(),  // x
@@ -211,8 +211,8 @@ private:
             T_orig.block<3,3>(0,0) = q.toRotationMatrix();
             T_orig.block<3,1>(0,3) = t;
 
-            // Convention stella_vslam : T_orig = T_color_from_depth
-            // (exprime un point depth dans le repère color, = Depth→RGB direct)
+            // stella_vslam convention: T_orig = T_color_from_depth
+            // (expresses a depth point in the color frame, = direct Depth→RGB)
             T_depth_to_rgb_ = T_orig;
         }
 
@@ -224,27 +224,27 @@ private:
     // =========================================================================
     // buildReprojectionLUT
     //
-    // Pré-calcule la destination RGB de chaque pixel depth (u,v).
-    // La translation de la baseline est prise en compte en assumant
-    // que la direction du rayon ne change pas significativement avec z
-    // (approximation valide pour z >> baseline, i.e. z > 0.3m avec baseline ~32mm).
+    // Precomputes the RGB destination of each depth pixel (u,v).
+    // The baseline translation is handled by assuming
+    // that the ray direction does not change significantly with z
+    // (valid approximation for z >> baseline, i.e. z > 0.3m with a ~32mm baseline).
     //
-    // Note : pour une précision maximale à courte distance, la correction
-    // de translation se fait au runtime en utilisant z réel (voir commentaire
-    // dans depthCallback si besoin de l'activer).
+    // Note: for maximum accuracy at short range, the translation correction
+    // is done at runtime using the real z (see comment
+    // in depthCallback if it needs to be enabled).
     // =========================================================================
     void buildReprojectionLUT(int actual_cols, int actual_rows)
     {
-        // Utilise les dimensions RÉELLES de l'image entrante.
-        // Si elles diffèrent du YAML (CameraIR.cols/rows), on met à jour.
+        // Use the ACTUAL dimensions of the incoming image.
+        // If they differ from the YAML (CameraIR.cols/rows), update them.
         if (actual_cols != depth_cols_ || actual_rows != depth_rows_)
         {
             RCLCPP_WARN(this->get_logger(),
-                "Dimensions depth réelles (%dx%d) ≠ YAML (%dx%d). "
-                "On utilise les dimensions réelles et on rescale K_d_.",
+                "Actual depth dimensions (%dx%d) != YAML (%dx%d). "
+                "Using the actual dimensions and rescaling K_d_.",
                 actual_cols, actual_rows, depth_cols_, depth_rows_);
 
-            // Rescale des intrinsèques si la résolution a changé
+            // Rescale the intrinsics if the resolution changed
             const double sx = static_cast<double>(actual_cols) / depth_cols_;
             const double sy = static_cast<double>(actual_rows) / depth_rows_;
             K_d_.at<double>(0,0) *= sx;  // fx
@@ -254,7 +254,7 @@ private:
             depth_cols_ = actual_cols;
             depth_rows_ = actual_rows;
         }
-        // Maps d'undistorsion de la caméra depth (appliquées à chaque frame)
+        // Depth camera undistortion maps (applied to every frame)
         cv::initUndistortRectifyMap(
             K_d_, D_d_, cv::noArray(), K_d_,
             cv::Size(depth_cols_, depth_rows_),
@@ -263,7 +263,7 @@ private:
         lut_u_rgb_ = cv::Mat(depth_rows_, depth_cols_, CV_32SC1, cv::Scalar(-1));
         lut_v_rgb_ = cv::Mat(depth_rows_, depth_cols_, CV_32SC1, cv::Scalar(-1));
 
-        // Coefficients de distorsion RGB en ordre OpenCV : k1 k2 p1 p2 k3
+        // RGB distortion coefficients in OpenCV order: k1 k2 p1 p2 k3
         const double k1 = D_rgb_.at<double>(0,0);
         const double k2 = D_rgb_.at<double>(0,1);
         const double p1 = D_rgb_.at<double>(0,2);
@@ -288,18 +288,18 @@ private:
 
             for (int u = 0; u < depth_cols_; ++u)
             {
-                // Rayon normalisé dans le repère depth (z=1)
+                // Normalized ray in the depth frame (z=1)
                 const Eigen::Vector3d ray_d(
                     (u - cx_d) / fx_d,
                     (v - cy_d) / fy_d,
                     1.0);
 
-                // Rotation vers le repère RGB (sans translation : baseline << z pour z>0.3m)
+                // Rotation to the RGB frame (no translation: baseline << z for z>0.3m)
                 const Eigen::Vector3d ray_rgb = R * ray_d;
                 const double xn = ray_rgb(0) / ray_rgb(2);
                 const double yn = ray_rgb(1) / ray_rgb(2);
 
-                // Distorsion radiale + tangentielle RGB
+                // RGB radial + tangential distortion
                 const double r2     = xn*xn + yn*yn;
                 const double r4     = r2*r2;
                 const double r6     = r4*r2;
@@ -320,7 +320,7 @@ private:
         }
 
         RCLCPP_INFO(this->get_logger(),
-            "LUT de reprojection construite (%dx%d → %dx%d pixels).",
+            "Reprojection LUT built (%dx%d → %dx%d pixels).",
             depth_cols_, depth_rows_, rgb_cols_, rgb_rows_);
     }
 
@@ -337,7 +337,7 @@ private:
             return;
         }
 
-        // ---- Construire la LUT au premier appel avec les vraies dimensions ----
+        // ---- Build the LUT on the first call with the actual dimensions ----
         if (!lut_ready_)
         {
             buildReprojectionLUT(
@@ -346,11 +346,11 @@ private:
             lut_ready_ = true;
         }
 
-        // ---- Undistorsion de la depth-map -----------------------------------
+        // ---- Depth-map undistortion -----------------------------------------
         cv::Mat depth_undist;
         cv::remap(cv_ptr->image, depth_undist, undist_map1_, undist_map2_, cv::INTER_NEAREST);
 
-        // ---- Projection dans la géométrie RGB avec T complète (R + t) -------
+        // ---- Projection into the RGB geometry with the full T (R + t) -------
         cv::Mat aligned = cv::Mat::zeros(rgb_rows_, rgb_cols_, CV_16UC1);
 
         const Eigen::Matrix3d R = T_depth_to_rgb_.block<3,3>(0,0);
@@ -378,20 +378,20 @@ private:
                 const uint16_t raw = row_d[u];
                 if (raw == 0) continue;
 
-                // Profondeur réelle en mètres
+                // Real depth in meters
                 const double z = raw * depth_scale_;
 
-                // Back-project dans le repère depth
+                // Back-project into the depth frame
                 const Eigen::Vector3d pt_d(
                     (u - cx_d) / fx_d * z,
                     (v - cy_d) / fy_d * z,
                     z);
 
-                // Transformer vers le repère RGB (R + t complets)
+                // Transform to the RGB frame (full R + t)
                 const Eigen::Vector3d pt_rgb = R * pt_d + t;
                 if (pt_rgb(2) <= 0.0) continue;
 
-                // Projection + distorsion RGB
+                // RGB projection + distortion
                 const double xn = pt_rgb(0) / pt_rgb(2);
                 const double yn = pt_rgb(1) / pt_rgb(2);
                 const double r2     = xn*xn + yn*yn;
@@ -405,19 +405,19 @@ private:
                 if (u_rgb >= 0 && u_rgb < rgb_cols_ &&
                     v_rgb >= 0 && v_rgb < rgb_rows_)
                 {
-                    // Z-buffer : on garde le pixel le plus proche
+                    // Z-buffer: keep the closest pixel
                     uint16_t& dst = aligned.at<uint16_t>(v_rgb, u_rgb);
                     if (dst == 0 || raw < dst) dst = raw;
                 }
             }
         }
 
-        // ---- Densification par dilatation morphologique ---------------------
+        // ---- Densification by morphological dilation ------------------------
         cv::Mat aligned_dense;
         cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
         cv::dilate(aligned, aligned_dense, kernel);
 
-        // Publication
+        // Publish
         cv_bridge::CvImage out;
         out.header   = msg->header;
         out.encoding = sensor_msgs::image_encodings::TYPE_16UC1;
@@ -433,7 +433,7 @@ int main(int argc, char* argv[])
     try {
         rclcpp::spin(std::make_shared<DepthToRGBNode>());
     } catch (const std::exception& e) {
-        RCLCPP_FATAL(rclcpp::get_logger("depth_to_rgb"), "Erreur fatale : %s", e.what());
+        RCLCPP_FATAL(rclcpp::get_logger("depth_to_rgb"), "Fatal error: %s", e.what());
         return 1;
     }
     rclcpp::shutdown();
